@@ -84,6 +84,10 @@ reloadEnv();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Behind Render / Vercel proxies: trust the first proxy hop so rate limiting,
+// secure cookies and req.ip work correctly in production.
+app.set('trust proxy', 1);
+
 // Enable CORS with credentials support for localhost & production
 app.use(
   cors({

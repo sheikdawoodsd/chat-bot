@@ -8,7 +8,6 @@ import {
   Sparkles,
   Square,
   AlertCircle,
-  Plus,
   Send,
   Radio,
   Languages,
@@ -101,6 +100,15 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
   const isSubmittingTurnRef = useRef(false);
   const statusRef = useRef(status);
   const isOpenRef = useRef(isOpen);
+  const analyserRef = useRef(null);
+  const levelRingRef = useRef(null);
+  const rafRef = useRef(null);
+  const historyEndRef = useRef(null);
+  const handleOrbTapRef = useRef(null);
+  const toggleMuteRef = useRef(null);
+
+  // Short conversation transcript shown inside the voice card
+  const [history, setHistory] = useState([]);
 
   statusRef.current = status;
   isMutedRef.current = isMuted;
@@ -162,6 +170,26 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
       } catch {}
       audioContextRef.current = null;
     }
+    analyserRef.current = null;
+  }, []);
+
+  // Soft chime so the user hears when Nova starts listening
+  const playCue = useCallback((freq = 880) => {
+    const ctx = audioContextRef.current;
+    if (!ctx || ctx.state === 'closed') return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.16);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.18);
+    } catch {}
   }, []);
 
   // Safe wrapper for closing voice mode (ensures immediate total silence)
@@ -230,6 +258,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
 
       dispatch({ type: 'SET_STATUS', status: 'thinking' });
       dispatch({ type: 'SET_TRANSCRIPT', transcript: cleanPrompt });
+      setHistory((h) => [...h.slice(-5), { role: 'user', text: cleanPrompt }]);
 
       let isFirstSentence = true;
 
@@ -293,6 +322,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
         }
 
         dispatch({ type: 'SET_REPLY', reply: fullAiReply });
+        setHistory((h) => [...h.slice(-5), { role: 'nova', text: fullAiReply }]);
       } catch (err) {
         clearTimeout(thinkingTimeout);
         isSubmittingTurnRef.current = false;
@@ -345,6 +375,15 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         const ctx = new AudioContextClass();
         audioContextRef.current = ctx;
+
+        // Live mic level analyser drives the pulsing ring around the orb
+        try {
+          const source = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+          analyserRef.current = analyser;
+        } catch {}
       }
 
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
@@ -354,6 +393,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
       }
 
       dispatch({ type: 'SET_STATUS', status: 'listening' });
+      playCue(880);
       hasSpokenRef.current = false;
       chunksRef.current = [];
 
@@ -475,7 +515,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
         error: 'Microphone permission or hardware error. Please verify your settings.',
       });
     }
-  }, [handleTurnSubmit]);
+  }, [handleTurnSubmit, playCue]);
 
   // Mount/unmount lifecycle
   const startListeningLoopRef = useRef(startListeningLoop);
@@ -601,6 +641,88 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
     cleanupAll();
     handleTurnSubmit(q);
   };
+
+  const handleSuggestion = (q) => {
+    cleanupAll();
+    handleTurnSubmit(q);
+  };
+
+  const toggleMute = () => {
+    const next = !isMuted;
+    dispatch({ type: 'SET_MUTED', isMuted: next });
+    if (next) {
+      cleanupAll();
+      dispatch({ type: 'SET_STATUS', status: 'idle' });
+    } else {
+      startListeningLoop();
+    }
+  };
+
+  handleOrbTapRef.current = handleOrbTap;
+  toggleMuteRef.current = toggleMute;
+
+  // Keyboard shortcuts: Space = talk / interrupt, M = mute, Esc = close
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        handleClose();
+        return;
+      }
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleOrbTapRef.current?.();
+      } else if (e.key === 'm' || e.key === 'M') {
+        toggleMuteRef.current?.();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, handleClose]);
+
+  // Reactive ring: pulses with the mic level while listening, gently while speaking
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const data = new Uint8Array(128);
+    let t = 0;
+    const tick = () => {
+      const el = levelRingRef.current;
+      if (el) {
+        let level = 0;
+        if (status === 'listening' && analyserRef.current) {
+          try {
+            analyserRef.current.getByteFrequencyData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) sum += data[i];
+            level = Math.min(1, sum / data.length / 80);
+          } catch {}
+        } else if (status === 'speaking') {
+          t += 0.14;
+          level = 0.35 + 0.25 * Math.sin(t);
+        }
+        el.style.transform = `scale(${1 + level * 0.4})`;
+        el.style.opacity = String(status === 'idle' ? 0.15 : 0.35 + level * 0.65);
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+  }, [status, isOpen]);
+
+  // Keep the newest transcript line in view
+  useEffect(() => {
+    historyEndRef.current?.scrollIntoView?.({ block: 'end' });
+  }, [history]);
+
+  // Fresh transcript each time the voice card is reopened
+  useEffect(() => {
+    if (isOpen) setHistory([]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -797,6 +919,14 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
               }}
             />
 
+            {/* 1b. Live level ring (driven by mic volume / speech rhythm) */}
+            <div
+              ref={levelRingRef}
+              data-testid="voice-level-ring"
+              className="absolute w-32 h-32 rounded-full pointer-events-none border-2 border-purple-400/60"
+              style={{ transform: 'scale(1)', opacity: 0.15, willChange: 'transform, opacity' }}
+            />
+
             {/* 2. Sleek Luminous Ring border (Smooth, continuous gradient border) */}
             <div
               className={`absolute w-32 h-32 rounded-full pointer-events-none p-[2px] transition-all duration-300 ${
@@ -902,15 +1032,66 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
               </p>
             )}
             {status === 'idle' && (
-              <p className="text-[11px] text-zinc-400">Tap orb to speak with Nova</p>
+              <p className="text-[11px] text-zinc-400">
+                Tap orb to speak with Nova
+                <span className="block text-[10px] text-zinc-500 mt-0.5">
+                  Space = talk · M = mute · Esc = close
+                </span>
+              </p>
             )}
             {error && (
-              <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11px] flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span className="line-clamp-2">{error}</span>
+              <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11px] flex flex-col items-center gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="line-clamp-2">{error}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    dispatch({ type: 'SET_STATUS', status: 'idle' });
+                    startListeningLoop();
+                  }}
+                  className="px-2.5 py-0.5 rounded-full bg-rose-500/25 hover:bg-rose-500/40 text-rose-100 text-[10px] font-medium transition-colors"
+                >
+                  Try again
+                </button>
               </div>
             )}
           </div>
+
+          {/* Quick suggestion chips (only before the first turn) */}
+          {history.length === 0 && (status === 'idle' || status === 'listening') && (
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5 max-w-[300px] animate-fade-in">
+              {['Tell me a joke', 'Explain AI simply', 'Give me a fun fact'].map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => handleSuggestion(q)}
+                  className="px-2.5 py-1 rounded-full bg-white/[0.06] hover:bg-purple-500/25 border border-purple-500/30 text-[10px] text-purple-200 hover:text-white transition-colors"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Mini transcript of this voice session */}
+          {history.length > 0 && (
+            <div
+              data-testid="voice-transcript"
+              className="mt-2 w-full max-h-24 overflow-y-auto space-y-1 px-1 text-[11px] leading-snug"
+            >
+              {history.map((m, i) => (
+                <p key={i} className={m.role === 'user' ? 'text-purple-200 text-right' : 'text-zinc-200'}>
+                  <span className="font-semibold text-[10px] opacity-70 mr-1">
+                    {m.role === 'user' ? 'You' : 'Nova'}
+                  </span>
+                  <span className="line-clamp-3">{m.text}</span>
+                </p>
+              ))}
+              <div ref={historyEndRef} />
+            </div>
+          )}
         </div>
 
         {/* Bottom Bar: Plain, Clean, Minimal Input Bar (No waveform, matches Image 1) */}
@@ -921,20 +1102,12 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
           >
             <button
               type="button"
-              onClick={() => {
-                const next = !isMuted;
-                dispatch({ type: 'SET_MUTED', isMuted: next });
-                if (next) {
-                  cleanupAll();
-                  dispatch({ type: 'SET_STATUS', status: 'idle' });
-                } else {
-                  startListeningLoop();
-                }
-              }}
+              onClick={toggleMute}
               className="text-purple-300 hover:text-white transition-colors"
-              title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+              title={isMuted ? 'Unmute microphone (M)' : 'Mute microphone (M)'}
+              aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
             >
-              {isMuted ? <MicOff className="w-4 h-4 text-rose-400" /> : <Plus className="w-4 h-4" />}
+              {isMuted ? <MicOff className="w-4 h-4 text-rose-400" /> : <Mic className="w-4 h-4" />}
             </button>
 
             <input
