@@ -36,7 +36,6 @@ import { ScheduledTasksModal } from './components/ScheduledTasksModal';
 import { useChat } from './hooks/useChat';
 import { audioPlayer } from './services/audioPlayer';
 import { introAudioManager } from './services/introAudioManager';
-import { hasUserSeenIntro } from './services/introStorage';
 
 function LoadingScreen() {
   return (
@@ -925,14 +924,9 @@ function AuthenticatedApp() {
   // replayKey forces a full NovaIntro remount (fresh audio + state) each time
   const [replayKey, setReplayKey] = useState(0);
 
-  // Intro plays ONLY after successful account CREATION (signup) or explicit replay.
-  // Normal login must go straight to chat with NO intro.
-  // hasUserSeenIntro() is checked from localStorage so it's instant (no async delay).
-  const showIntro =
-    isReplayingIntro ||
-    (Boolean(isJustRegistered) &&
-      !user?.hasSeenIntro &&
-      !hasUserSeenIntro(user?.id));
+  // Intro plays after every explicit login or signup (and on manual replay),
+  // but NOT when an existing session is silently restored on page refresh.
+  const showIntro = isReplayingIntro || Boolean(isJustRegistered);
 
   const handleCompleteIntro = () => {
     setIsReplayingIntro(false);

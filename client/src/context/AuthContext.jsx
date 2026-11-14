@@ -50,7 +50,8 @@ export function AuthProvider({ children }) {
       throw new Error(data.error || 'Login failed. Please check your credentials.');
     }
 
-    setIsJustRegistered(false);
+    // Intro plays on every explicit login (not on silent session restore)
+    setIsJustRegistered(true);
     setUser(data.user);
     return data.user;
   };

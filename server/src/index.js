@@ -1048,10 +1048,12 @@ app.post('/api/image', requireAuth, imageLimiter, async (req, res) => {
 
     let savedFileId = null;
     let savedFileUrl = null;
+    let chatRecord = null;
 
     // Ensure chat, user request message, and assistant visual result are saved in SQLite
     if (!isTemp && chatId) {
       const existingChat = getChat(chatId, req.user.id);
+      chatRecord = existingChat;
       if (!existingChat) {
         createChat({
           id: chatId,
@@ -1506,6 +1508,18 @@ app.post('/api/presentation/gamma', async (req, res) => {
     return res.status(500).json({ error: 'Failed to process presentation generation.' });
   }
 });
+
+// ========================================================
+// Serve the built React frontend (single Render URL for site + API)
+// ========================================================
+const clientDist = path.resolve(__dirname, '../../client/dist');
+if (fs.existsSync(path.join(clientDist, 'index.html'))) {
+  app.use(express.static(clientDist, { index: false, maxAge: '1h' }));
+  app.get(/^\/(?!api\/).*/, (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
 
 // Centralized error handling
 app.use((err, req, res, next) => {

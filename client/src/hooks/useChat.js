@@ -473,6 +473,7 @@ export function useChat() {
         if (!isTemp) {
           setTimeout(() => loadServerChats(), 500);
         }
+        return true;
       } catch (err) {
         clearTimeout(abortTimeout);
         console.error('[Nova Chat] Image generation error:', err);
@@ -496,6 +497,7 @@ export function useChat() {
               : m
           ),
         }));
+        return false;
       } finally {
         setIsStreaming(false);
       }
@@ -775,6 +777,17 @@ export function useChat() {
     async (spokenText, { onSentenceChunk } = {}) => {
       if (!spokenText?.trim()) return '';
 
+      // Image Studio (or a spoken "draw / generate an image of ...") -> create the image
+      // and show it in the chat together with the Gemini prompt + link.
+      if (activeChatRef.current?.workspaceMode === 'image' || isImagePrompt(spokenText.trim())) {
+        const ok = await handleGenerateImage(spokenText.trim(), {});
+        const reply = ok
+          ? 'Your image is ready. I have shown it in the chat, along with the Gemini prompt and link.'
+          : 'Sorry, I could not create that image. Please try again from the chat.';
+        onSentenceChunk?.(reply);
+        return reply;
+      }
+
       // Cancel any previous in-flight voice turn to prevent race conditions & hanging
       if (voiceAbortControllerRef.current) {
         try { voiceAbortControllerRef.current.abort(); } catch {}
@@ -937,7 +950,7 @@ export function useChat() {
         }
       }
     },
-    [loadServerChats]
+    [loadServerChats, handleGenerateImage]
   );
 
   const handleStop = useCallback(() => {

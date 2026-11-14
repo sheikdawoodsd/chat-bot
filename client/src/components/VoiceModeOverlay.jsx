@@ -289,7 +289,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
           isSubmittingTurnRef.current = false;
           dispatch({ type: 'SET_STATUS', status: 'idle' });
         }
-      }, 20000);
+      }, 70000);
 
       try {
         let fullAiReply = '';
