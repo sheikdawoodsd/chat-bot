@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Hi Nova! — Friendly & Intelligent AI Assistant</title>
+    <meta name="description" content="Hi Nova! A conversational ChatGPT-style AI assistant powered by Google Gemini, featuring real-time streaming, syntax-highlighted code, and chat history." />
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <!-- Theme Script to Prevent Flash: Dark mode default -->
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem('nova_theme');
+          if (theme === 'light') {
+            document.documentElement.classList.remove('dark');
+          } else {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+      
+
+      
+
+
+    
+
+      // Unregister any stale service workers or caches from previous projects on localhost
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (registrations) {
+          for (var registration of registrations) {
+            registration.unregister();
+            console.log('[Nova] Unregistered stale service worker:', registration.scope);
+          }
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then(function (names) {
+          for (var name of names) {
+            if (!name.includes('nova')) {
+              caches.delete(name);
+            }
+          }
+        });
+      }
+    </script>
+  </head>
+  <body class="bg-[#F8F9FA] text-[#1E1E24] dark:bg-[#0A0A0F] dark:text-[#F3F4F6] antialiased font-sans transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

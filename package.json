@@ -1,0 +1,13 @@
+{
+  "name": "ai-chatbot-app",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev": "node scripts/dev.js",
+    "start": "node server/src/index.js",
+    "install:all": "npm --prefix server install && npm --prefix client install"
+  }
+}
