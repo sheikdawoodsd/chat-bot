@@ -18,7 +18,9 @@ const TRANSCRIPTION_PROMPT =
 /**
  * Transcribe recorded microphone audio using Gemini's native multimodal audio capabilities
  */
-export async function transcribeAudio({ buffer, mimeType }) {
+const LANG_NAMES = { 'ta-IN': 'Tamil', 'hi-IN': 'Hindi', 'en-US': 'English', 'es-ES': 'Spanish', 'fr-FR': 'French' };
+
+export async function transcribeAudio({ buffer, mimeType, lang }) {
   reloadEnv();
   const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
@@ -47,8 +49,8 @@ export async function transcribeAudio({ buffer, mimeType }) {
 
   // Multimodal audio models to attempt in order of native audio comprehension
   const models = [
-    process.env.GEMINI_MODEL || 'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
+    process.env.GEMINI_MODEL || 'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
   ];
 
@@ -70,7 +72,7 @@ export async function transcribeAudio({ buffer, mimeType }) {
                 },
               },
               {
-                text: TRANSCRIPTION_PROMPT,
+                text: LANG_NAMES[lang] ? `${TRANSCRIPTION_PROMPT} Hint: the speaker is most likely speaking ${LANG_NAMES[lang]}.` : TRANSCRIPTION_PROMPT,
               },
             ],
           },

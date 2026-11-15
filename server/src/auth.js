@@ -50,7 +50,7 @@ export function clearAuthCookie(res) {
  * Authentication middleware: protects routes and attaches req.user
  * Renews the 30-day cookie if user is active
  */
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const cookieToken = req.cookies?.[COOKIE_NAME];
   const authHeader = req.headers.authorization;
   const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -72,7 +72,7 @@ export function requireAuth(req, res, next) {
     });
   }
 
-  const user = getUserById(decoded.id);
+  const user = await getUserById(decoded.id);
   if (!user) {
     clearAuthCookie(res);
     return res.status(401).json({

@@ -1,6 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -196,7 +197,7 @@ function handleFileUpload(req, res, next) {
 const sessionAttachmentRegistry = new Map();
 const sessionChatAttachments = new Map();
 
-function hydrateMessageAttachments(contextMessages, chatId, userId) {
+async function hydrateMessageAttachments(contextMessages, chatId, userId) {
   for (const msg of contextMessages) {
     if (Array.isArray(msg.attachments)) {
       for (const att of msg.attachments) {
@@ -243,7 +244,7 @@ function hydrateMessageAttachments(contextMessages, chatId, userId) {
 
         // 5. Check SQLite DB by attId
         if (!hydratedBuffer && attId) {
-          const fileRecord = getAttachmentById(attId);
+          const fileRecord = await getAttachmentById(attId);
           if (fileRecord && fileRecord.path && fs.existsSync(fileRecord.path)) {
             try {
               hydratedBuffer = fs.readFileSync(fileRecord.path);
@@ -317,7 +318,7 @@ function isGeminiKeyConfigured() {
 // Health & Provider Information
 // ========================================================
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   reloadEnv();
   const provider = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
   const hasKey = isGeminiKeyConfigured();
@@ -341,7 +342,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.get('/api/providers', (req, res) => {
+app.get('/api/providers', async (req, res) => {
   res.json({
     activeProvider: process.env.AI_PROVIDER || 'gemini',
     available: [
@@ -357,9 +358,9 @@ app.get('/api/providers', (req, res) => {
 // ========================================================
 
 // Check username availability
-app.get('/api/auth/check-username', (req, res) => {
+app.get('/api/auth/check-username', async (req, res) => {
   const queryUser = (req.query.u || req.query.username || '').trim();
-  const available = isUsernameAvailable(queryUser);
+  const available = await isUsernameAvailable(queryUser);
   res.json({
     success: true,
     username: queryUser,
@@ -389,7 +390,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const existing = getUserByEmail(cleanEmail);
+    const existing = await getUserByEmail(cleanEmail);
     if (existing) {
       return res.status(400).json({ error: 'This email is already registered. Please log in instead.' });
     }
@@ -399,7 +400,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       const base = cleanEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 12);
       const prefix = base.length >= 3 ? base : `user_${base}`;
       let candidate = prefix;
-      while (!isUsernameAvailable(candidate)) {
+      while (!await isUsernameAvailable(candidate)) {
         candidate = `${prefix.slice(0, 14)}_${Math.random().toString(36).slice(2, 6)}`;
       }
       cleanUsername = candidate;
@@ -410,7 +411,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         });
       }
 
-      if (!isUsernameAvailable(cleanUsername)) {
+      if (!await isUsernameAvailable(cleanUsername)) {
         return res.status(400).json({ error: 'This username is already taken. Please choose another.' });
       }
     }
@@ -418,7 +419,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const passwordHash = await hashPassword(password);
     const userId = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-    const user = createUser({
+    const user = await createUser({
       id: userId,
       email: cleanEmail,
       username: cleanUsername,
@@ -461,7 +462,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const user = getUserByEmail(cleanEmail) || getUserByUsername(cleanEmail);
+    const user = await getUserByEmail(cleanEmail) || await getUserByUsername(cleanEmail);
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password. Please check your credentials.' });
     }
@@ -497,8 +498,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 });
 
 // Get Current User (Stay Logged In)
-app.get('/api/auth/me', requireAuth, (req, res) => {
-  const current = getUserById(req.user.id);
+app.get('/api/auth/me', requireAuth, async (req, res) => {
+  const current = await getUserById(req.user.id);
   res.json({
     success: true,
     user: current
@@ -515,9 +516,9 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 });
 
 // Mark Cosmic Intro as Seen
-app.post('/api/auth/intro-seen', requireAuth, (req, res) => {
+app.post('/api/auth/intro-seen', requireAuth, async (req, res) => {
   try {
-    markIntroSeen(req.user.id);
+    await markIntroSeen(req.user.id);
     res.json({ success: true });
   } catch (err) {
     console.error('[Nova Auth] Mark intro seen error:', err);
@@ -526,7 +527,7 @@ app.post('/api/auth/intro-seen', requireAuth, (req, res) => {
 });
 
 // Logout
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', async (req, res) => {
   clearAuthCookie(res);
   res.json({ success: true, message: 'Logged out successfully' });
 });
@@ -551,7 +552,7 @@ app.patch('/api/auth/profile', requireAuth, async (req, res) => {
       });
     }
 
-    if (!isUsernameAvailable(cleanUsername, req.user.id)) {
+    if (!await isUsernameAvailable(cleanUsername, req.user.id)) {
       return res.status(400).json({ error: 'This username is already taken. Please choose another.' });
     }
 
@@ -564,7 +565,7 @@ app.patch('/api/auth/profile', requireAuth, async (req, res) => {
         return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
       }
 
-      const existingUser = getUserByEmail(req.user.email);
+      const existingUser = await getUserByEmail(req.user.email);
       const isMatch = await comparePassword(currentPassword, existingUser.passwordHash);
       if (!isMatch) {
         return res.status(400).json({ error: 'Current password does not match.' });
@@ -572,7 +573,7 @@ app.patch('/api/auth/profile', requireAuth, async (req, res) => {
       newPasswordHash = await hashPassword(newPassword);
     }
 
-    const updated = updateUserProfile(req.user.id, {
+    const updated = await updateUserProfile(req.user.id, {
       fullName: fullName.trim(),
       username: cleanUsername,
       avatarUrl: avatarUrl !== undefined ? avatarUrl : undefined,
@@ -604,10 +605,10 @@ app.patch('/api/auth/profile', requireAuth, async (req, res) => {
 });
 
 // Delete Account (Cascades and deletes user, chats, and disk files)
-app.delete('/api/auth/account', requireAuth, (req, res) => {
+app.delete('/api/auth/account', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const filePaths = deleteUser(userId);
+    const filePaths = await deleteUser(userId);
     for (const f of filePaths) {
       deleteDiskFile(f);
     }
@@ -626,10 +627,10 @@ app.delete('/api/auth/account', requireAuth, (req, res) => {
 // ========================================================
 
 // Search chats and message contents
-app.get('/api/chats/search', requireAuth, (req, res) => {
+app.get('/api/chats/search', requireAuth, async (req, res) => {
   try {
     const q = req.query.q || '';
-    const results = searchChats(req.user.id, q);
+    const results = await searchChats(req.user.id, q);
     res.json({ success: true, results });
   } catch (err) {
     console.error('[Nova Chats] Search error:', err);
@@ -638,9 +639,9 @@ app.get('/api/chats/search', requireAuth, (req, res) => {
 });
 
 // List user's chats
-app.get('/api/chats', requireAuth, (req, res) => {
+app.get('/api/chats', requireAuth, async (req, res) => {
   try {
-    const chats = listChats(req.user.id);
+    const chats = await listChats(req.user.id);
     res.json({ success: true, chats });
   } catch (err) {
     console.error('[Nova Chats] List error:', err);
@@ -649,9 +650,9 @@ app.get('/api/chats', requireAuth, (req, res) => {
 });
 
 // Clear all chats for user (PART 3)
-app.delete('/api/chats', requireAuth, (req, res) => {
+app.delete('/api/chats', requireAuth, async (req, res) => {
   try {
-    const filePaths = clearAllChats(req.user.id);
+    const filePaths = await clearAllChats(req.user.id);
     for (const f of filePaths) {
       deleteDiskFile(f);
     }
@@ -663,9 +664,9 @@ app.delete('/api/chats', requireAuth, (req, res) => {
 });
 
 // Get specific chat with messages and attachments
-app.get('/api/chats/:id', requireAuth, (req, res) => {
+app.get('/api/chats/:id', requireAuth, async (req, res) => {
   try {
-    const chat = getChat(req.params.id, req.user.id);
+    const chat = await getChat(req.params.id, req.user.id);
     if (!chat) {
       return res.status(404).json({ error: 'Chat not found.' });
     }
@@ -677,11 +678,11 @@ app.get('/api/chats/:id', requireAuth, (req, res) => {
 });
 
 // Create new chat
-app.post('/api/chats', requireAuth, (req, res) => {
+app.post('/api/chats', requireAuth, async (req, res) => {
   try {
     const { id, title, workspaceMode, projectId } = req.body || {};
     const chatId = id || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const created = createChat({
+    const created = await createChat({
       id: chatId,
       userId: req.user.id,
       title: title || 'New Chat',
@@ -696,14 +697,14 @@ app.post('/api/chats', requireAuth, (req, res) => {
 });
 
 // Rename chat
-app.patch('/api/chats/:id', requireAuth, (req, res) => {
+app.patch('/api/chats/:id', requireAuth, async (req, res) => {
   try {
     const { title } = req.body || {};
     if (!title || typeof title !== 'string' || !title.trim()) {
       return res.status(400).json({ error: 'Please provide a valid chat title.' });
     }
 
-    const updated = renameChat(req.params.id, req.user.id, title.trim());
+    const updated = await renameChat(req.params.id, req.user.id, title.trim());
     res.json({ success: true, chat: updated });
   } catch (err) {
     console.error('[Nova Chats] Rename error:', err);
@@ -712,9 +713,9 @@ app.patch('/api/chats/:id', requireAuth, (req, res) => {
 });
 
 // Delete chat
-app.delete('/api/chats/:id', requireAuth, (req, res) => {
+app.delete('/api/chats/:id', requireAuth, async (req, res) => {
   try {
-    const filePaths = deleteChat(req.params.id, req.user.id);
+    const filePaths = await deleteChat(req.params.id, req.user.id);
     for (const f of filePaths) {
       deleteDiskFile(f);
     }
@@ -728,10 +729,10 @@ app.delete('/api/chats/:id', requireAuth, (req, res) => {
 // ==================== Archive Routes ====================
 
 // List archived chats
-app.get('/api/chats/archived', requireAuth, (req, res) => {
+app.get('/api/chats/archived', requireAuth, async (req, res) => {
   try {
     const q = req.query.q || '';
-    const archived = q ? searchArchivedChats(req.user.id, q) : listArchivedChats(req.user.id);
+    const archived = q ? await searchArchivedChats(req.user.id, q) : await listArchivedChats(req.user.id);
     res.json({ success: true, archived });
   } catch (err) {
     console.error('[Nova Archive] List error:', err);
@@ -740,9 +741,9 @@ app.get('/api/chats/archived', requireAuth, (req, res) => {
 });
 
 // Archive a chat
-app.post('/api/chats/:id/archive', requireAuth, (req, res) => {
+app.post('/api/chats/:id/archive', requireAuth, async (req, res) => {
   try {
-    const result = archiveChat(req.params.id, req.user.id);
+    const result = await archiveChat(req.params.id, req.user.id);
     res.json({ success: true, ...result, message: 'Chat archived successfully.' });
   } catch (err) {
     console.error('[Nova Archive] Archive error:', err);
@@ -751,9 +752,9 @@ app.post('/api/chats/:id/archive', requireAuth, (req, res) => {
 });
 
 // Restore / Unarchive a chat
-app.post('/api/chats/:id/unarchive', requireAuth, (req, res) => {
+app.post('/api/chats/:id/unarchive', requireAuth, async (req, res) => {
   try {
-    const result = unarchiveChat(req.params.id, req.user.id);
+    const result = await unarchiveChat(req.params.id, req.user.id);
     res.json({ success: true, ...result, message: 'Chat restored to active sidebar.' });
   } catch (err) {
     console.error('[Nova Archive] Unarchive error:', err);
@@ -764,9 +765,9 @@ app.post('/api/chats/:id/unarchive', requireAuth, (req, res) => {
 // ==================== Scheduled Tasks Routes ====================
 
 // List scheduled tasks
-app.get('/api/scheduled-tasks', requireAuth, (req, res) => {
+app.get('/api/scheduled-tasks', requireAuth, async (req, res) => {
   try {
-    const tasks = listScheduledTasks(req.user.id);
+    const tasks = await listScheduledTasks(req.user.id);
     res.json({ success: true, tasks });
   } catch (err) {
     console.error('[Nova Scheduled] List error:', err);
@@ -775,13 +776,13 @@ app.get('/api/scheduled-tasks', requireAuth, (req, res) => {
 });
 
 // Create scheduled task
-app.post('/api/scheduled-tasks', requireAuth, (req, res) => {
+app.post('/api/scheduled-tasks', requireAuth, async (req, res) => {
   try {
     const { title, prompt, scheduleType, timeSpec } = req.body || {};
     if (!title || !prompt) {
       return res.status(400).json({ error: 'Title and prompt are required.' });
     }
-    const created = createScheduledTask({
+    const created = await createScheduledTask({
       userId: req.user.id,
       title,
       prompt,
@@ -796,10 +797,10 @@ app.post('/api/scheduled-tasks', requireAuth, (req, res) => {
 });
 
 // Toggle scheduled task status
-app.patch('/api/scheduled-tasks/:id/toggle', requireAuth, (req, res) => {
+app.patch('/api/scheduled-tasks/:id/toggle', requireAuth, async (req, res) => {
   try {
     const { isActive } = req.body || {};
-    const updated = toggleScheduledTask(req.params.id, req.user.id, !!isActive);
+    const updated = await toggleScheduledTask(req.params.id, req.user.id, !!isActive);
     res.json({ success: true, task: updated });
   } catch (err) {
     console.error('[Nova Scheduled] Toggle error:', err);
@@ -808,9 +809,9 @@ app.patch('/api/scheduled-tasks/:id/toggle', requireAuth, (req, res) => {
 });
 
 // Delete scheduled task
-app.delete('/api/scheduled-tasks/:id', requireAuth, (req, res) => {
+app.delete('/api/scheduled-tasks/:id', requireAuth, async (req, res) => {
   try {
-    deleteScheduledTask(req.params.id, req.user.id);
+    await deleteScheduledTask(req.params.id, req.user.id);
     res.json({ success: true, message: 'Scheduled task deleted.' });
   } catch (err) {
     console.error('[Nova Scheduled] Delete error:', err);
@@ -823,9 +824,9 @@ app.delete('/api/scheduled-tasks/:id', requireAuth, (req, res) => {
 // ========================================================
 
 // List user's projects
-app.get('/api/projects', requireAuth, (req, res) => {
+app.get('/api/projects', requireAuth, async (req, res) => {
   try {
-    const projects = listProjects(req.user.id);
+    const projects = await listProjects(req.user.id);
     res.json({ success: true, projects });
   } catch (err) {
     console.error('[Nova Projects] List error:', err);
@@ -834,11 +835,11 @@ app.get('/api/projects', requireAuth, (req, res) => {
 });
 
 // Create new project
-app.post('/api/projects', requireAuth, (req, res) => {
+app.post('/api/projects', requireAuth, async (req, res) => {
   try {
     const { name, id } = req.body || {};
     const safeName = (name || 'New Project').trim();
-    const project = createProject({
+    const project = await createProject({
       id: id || undefined,
       userId: req.user.id,
       name: safeName,
@@ -851,13 +852,13 @@ app.post('/api/projects', requireAuth, (req, res) => {
 });
 
 // Rename project
-app.patch('/api/projects/:id', requireAuth, (req, res) => {
+app.patch('/api/projects/:id', requireAuth, async (req, res) => {
   try {
     const { name } = req.body || {};
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'Please provide a valid project name.' });
     }
-    const updated = renameProject(req.params.id, req.user.id, name.trim());
+    const updated = await renameProject(req.params.id, req.user.id, name.trim());
     res.json({ success: true, project: updated });
   } catch (err) {
     console.error('[Nova Projects] Rename error:', err);
@@ -866,9 +867,9 @@ app.patch('/api/projects/:id', requireAuth, (req, res) => {
 });
 
 // Delete project
-app.delete('/api/projects/:id', requireAuth, (req, res) => {
+app.delete('/api/projects/:id', requireAuth, async (req, res) => {
   try {
-    deleteProject(req.params.id, req.user.id);
+    await deleteProject(req.params.id, req.user.id);
     res.json({ success: true, message: 'Project deleted.' });
   } catch (err) {
     console.error('[Nova Projects] Delete error:', err);
@@ -877,10 +878,10 @@ app.delete('/api/projects/:id', requireAuth, (req, res) => {
 });
 
 // Message feedback (PART 4: Thumbs Up / Down)
-app.post('/api/messages/:id/feedback', requireAuth, (req, res) => {
+app.post('/api/messages/:id/feedback', requireAuth, async (req, res) => {
   try {
     const { feedback } = req.body || {};
-    const result = setMessageFeedback(req.params.id, req.user.id, feedback);
+    const result = await setMessageFeedback(req.params.id, req.user.id, feedback);
     res.json(result);
   } catch (err) {
     console.error('[Nova Messages] Feedback error:', err);
@@ -889,7 +890,7 @@ app.post('/api/messages/:id/feedback', requireAuth, (req, res) => {
 });
 
 // One-time import of chats from IndexedDB/localStorage
-app.post('/api/chats/import', requireAuth, (req, res) => {
+app.post('/api/chats/import', requireAuth, async (req, res) => {
   try {
     const { chats } = req.body || {};
     if (!Array.isArray(chats) || chats.length === 0) {
@@ -899,10 +900,10 @@ app.post('/api/chats/import', requireAuth, (req, res) => {
     let importedCount = 0;
     for (const c of chats) {
       if (!c.id || !c.messages || c.messages.length === 0) continue;
-      const existing = getChat(c.id, req.user.id);
+      const existing = await getChat(c.id, req.user.id);
       if (existing) continue;
 
-      createChat({
+      await createChat({
         id: c.id,
         userId: req.user.id,
         title: c.title || 'Imported Chat',
@@ -912,7 +913,7 @@ app.post('/api/chats/import', requireAuth, (req, res) => {
       for (const m of c.messages) {
         if (!m.content && (!m.attachments || m.attachments.length === 0)) continue;
         const msgId = m.id || `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        saveMessage({
+        await saveMessage({
           id: msgId,
           chatId: c.id,
           role: m.role || 'user',
@@ -934,9 +935,9 @@ app.post('/api/chats/import', requireAuth, (req, res) => {
 // Authenticated File Serving
 // ========================================================
 
-app.get('/api/files/:id', requireAuth, (req, res) => {
+app.get('/api/files/:id', requireAuth, async (req, res) => {
   try {
-    let attachment = getAttachmentById(req.params.id);
+    let attachment = await getAttachmentById(req.params.id);
     let filePath = attachment?.path;
     let mimeType = attachment?.mimeType;
     let filename = attachment?.filename;
@@ -1007,6 +1008,7 @@ app.post('/api/transcribe', requireAuth, handleAudioUpload, async (req, res) => 
     const result = await transcribeAudio({
       buffer: req.file.buffer,
       mimeType: req.file.mimetype,
+      lang: req.body && req.body.lang,
     });
 
     res.json({
@@ -1052,10 +1054,10 @@ app.post('/api/image', requireAuth, imageLimiter, async (req, res) => {
 
     // Ensure chat, user request message, and assistant visual result are saved in SQLite
     if (!isTemp && chatId) {
-      const existingChat = getChat(chatId, req.user.id);
+      const existingChat = await getChat(chatId, req.user.id);
       chatRecord = existingChat;
       if (!existingChat) {
-        createChat({
+        await createChat({
           id: chatId,
           userId: req.user.id,
           title: `${prompt.trim().slice(0, 30)} (image)`,
@@ -1065,7 +1067,7 @@ app.post('/api/image', requireAuth, imageLimiter, async (req, res) => {
 
       // Persist user prompt message so chat history is preserved across reloads
       const userMsgId = req.body.userMessageId || `msg_user_${Date.now()}`;
-      saveMessage({
+      await saveMessage({
         id: userMsgId,
         chatId,
         role: 'user',
@@ -1087,7 +1089,7 @@ app.post('/api/image', requireAuth, imageLimiter, async (req, res) => {
           });
 
           const assistantMsgId = `msg_ai_img_${Date.now()}`;
-          saveMessage({
+          await saveMessage({
             id: assistantMsgId,
             chatId,
             role: 'assistant',
@@ -1095,7 +1097,7 @@ app.post('/api/image', requireAuth, imageLimiter, async (req, res) => {
           });
 
           const attId = `att_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          saveAttachment({
+          await saveAttachment({
             id: attId,
             messageId: assistantMsgId,
             filename: saved.fileName,
@@ -1106,22 +1108,22 @@ app.post('/api/image', requireAuth, imageLimiter, async (req, res) => {
 
           savedFileId = attId;
           savedFileUrl = `/api/files/${attId}`;
-          touchChat(chatId, req.user.id);
+          await touchChat(chatId, req.user.id);
     if (chatRecord?.projectId) {
-      touchProject(chatRecord.projectId, req.user.id);
+      await touchProject(chatRecord.projectId, req.user.id);
     }
         }
       } else {
         const assistantMsgId = `msg_ai_img_${Date.now()}`;
-        saveMessage({
+        await saveMessage({
           id: assistantMsgId,
           chatId,
           role: 'assistant',
           content: assistantMsgContent || `![${prompt.trim()}](${result.imageUrl})`,
         });
-        touchChat(chatId, req.user.id);
+        await touchChat(chatId, req.user.id);
     if (chatRecord?.projectId) {
-      touchProject(chatRecord.projectId, req.user.id);
+      await touchProject(chatRecord.projectId, req.user.id);
     }
       }
     }
@@ -1185,7 +1187,7 @@ app.post('/api/chat', requireAuth, chatLimiter, handleFileUpload, async (req, re
 
   // Only create or query DB if NOT temporary/personalized
   if (!isTemporary) {
-    chatRecord = getChat(chatId, req.user.id);
+    chatRecord = await getChat(chatId, req.user.id);
     if (!chatRecord) {
       let autoTitle = (userText || 'Conversation').trim().slice(0, 36) || 'New Chat';
       // Strip any emojis from autoTitle
@@ -1196,7 +1198,7 @@ app.post('/api/chat', requireAuth, chatLimiter, handleFileUpload, async (req, re
         const newProjId = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         const projName = (userText || 'Project').trim().slice(0, 36) || 'New Project';
         try {
-          createProject({ id: newProjId, userId: req.user.id, name: projName });
+          await createProject({ id: newProjId, userId: req.user.id, name: projName });
           projectId = newProjId;
         } catch {}
       }
@@ -1209,7 +1211,7 @@ app.post('/api/chat', requireAuth, chatLimiter, handleFileUpload, async (req, re
       } else if (mode === 'project' && !autoTitle.toLowerCase().includes('(project)')) {
         autoTitle = `${autoTitle} (project)`;
       }
-      chatRecord = createChat({
+      chatRecord = await createChat({
         id: chatId,
         userId: req.user.id,
         title: autoTitle,
@@ -1217,7 +1219,7 @@ app.post('/api/chat', requireAuth, chatLimiter, handleFileUpload, async (req, re
         projectId,
       });
       if (projectId) {
-        touchProject(projectId, req.user.id);
+        await touchProject(projectId, req.user.id);
       }
     }
   }
@@ -1312,7 +1314,7 @@ app.post('/api/chat', requireAuth, chatLimiter, handleFileUpload, async (req, re
   // Save the user's message and attachments to DB immediately (if NOT temporary)
   const userMessageId = latestUserMsg.id || `msg_${Date.now()}`;
   if (!isTemporary) {
-    saveMessage({
+    await saveMessage({
       id: userMessageId,
       chatId,
       role: 'user',
@@ -1321,7 +1323,7 @@ app.post('/api/chat', requireAuth, chatLimiter, handleFileUpload, async (req, re
 
     for (const att of savedAttachments) {
       if (att.filePath) {
-        saveAttachment({
+        await saveAttachment({
           id: att.id,
           messageId: userMessageId,
           filename: att.name,
@@ -1332,9 +1334,9 @@ app.post('/api/chat', requireAuth, chatLimiter, handleFileUpload, async (req, re
       }
     }
 
-    touchChat(chatId, req.user.id);
+    await touchChat(chatId, req.user.id);
     if (chatRecord?.projectId) {
-      touchProject(chatRecord.projectId, req.user.id);
+      await touchProject(chatRecord.projectId, req.user.id);
     }
   }
 
@@ -1342,7 +1344,7 @@ app.post('/api/chat', requireAuth, chatLimiter, handleFileUpload, async (req, re
   const contextMessages = rawMessages.slice(-20);
 
   // Hydrate image attachments across all tiers (memory, disk, DB) so Gemini Vision has full visual context for follow-ups
-  hydrateMessageAttachments(contextMessages, chatId, req.user?.id);
+  await hydrateMessageAttachments(contextMessages, chatId, req.user?.id);
 
   const { systemPrompt, model, provider: requestedProvider, workspaceMode = 'general' } = req.body;
   let providerInstance;
@@ -1412,15 +1414,15 @@ app.post('/api/chat', requireAuth, chatLimiter, handleFileUpload, async (req, re
 
     // Save assistant message to SQLite immediately upon completion (if NOT temporary)
     if (!isTemporary && fullAiResponse.trim()) {
-      saveMessage({
+      await saveMessage({
         id: assistantMessageId,
         chatId,
         role: 'assistant',
         content: fullAiResponse,
       });
-      touchChat(chatId, req.user.id);
+      await touchChat(chatId, req.user.id);
     if (chatRecord?.projectId) {
-      touchProject(chatRecord.projectId, req.user.id);
+      await touchProject(chatRecord.projectId, req.user.id);
     }
     }
 
@@ -1515,7 +1517,7 @@ app.post('/api/presentation/gamma', async (req, res) => {
 const clientDist = path.resolve(__dirname, '../../client/dist');
 if (fs.existsSync(path.join(clientDist, 'index.html'))) {
   app.use(express.static(clientDist, { index: false, maxAge: '1h' }));
-  app.get(/^\/(?!api\/).*/, (req, res) => {
+  app.get(/^\/(?!api\/).*/, async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(clientDist, 'index.html'));
   });
@@ -1535,7 +1537,7 @@ app.listen(PORT, () => {
   console.log(`🪐 Hi Nova! AI Chatbot Backend is running`);
   console.log(`📡 URL: http://localhost:${PORT}`);
   console.log(`📁 Loaded .env from: ${envPath}`);
-  console.log(`🗄️ Database: SQLite at ${process.env.DATABASE_PATH || 'data/nova.db'}`);
+  console.log('🗄️ Database: PostgreSQL (Supabase) — permanent storage');
   console.log(`🔐 Authentication: JWT httpOnly 30-day session cookies`);
   console.log(`🤖 AI Provider: ${process.env.AI_PROVIDER || 'gemini'}`);
   console.log(`🎯 Model: ${process.env.GEMINI_MODEL || 'gemini-3.5-flash'}`);

@@ -81,11 +81,11 @@ function GeneratedClip1({ elapsed, startTime, endTime }) {
           }}
         />
         {/* Ambient Radial Aura */}
-        <div className="absolute w-[32rem] h-[32rem] rounded-full bg-purple-600/20 blur-3xl" />
+        <div className="absolute w-[32rem] h-[32rem] rounded-full bg-purple-600/20 blur-3xl [transform:translateZ(0)]" />
       </div>
 
       {/* Top Floating Glass Card: User Message */}
-      <div className="w-full max-w-2xl flex items-center gap-3 sm:gap-4 mb-4 p-3.5 sm:p-4 rounded-2xl bg-[#120B22]/90 border border-purple-500/40 shadow-[0_8px_30px_rgba(139,92,246,0.25)] backdrop-blur-xl animate-fade-in">
+      <div className="w-full max-w-2xl flex items-center gap-3 sm:gap-4 mb-4 p-3.5 sm:p-4 rounded-2xl bg-[#120B22]/90 border border-purple-500/40 shadow-[0_8px_30px_rgba(139,92,246,0.25)] animate-fade-in">
         <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-tr from-purple-700 to-indigo-600 border border-purple-400/50 flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-md">
           <span>U</span>
         </div>
@@ -95,7 +95,7 @@ function GeneratedClip1({ elapsed, startTime, endTime }) {
       </div>
 
       {/* Bottom Floating Glass Card: Nova AI Step-by-Step Response */}
-      <div className="w-full max-w-2xl flex items-start gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl bg-[#0F091E]/95 border border-purple-500/50 shadow-[0_15px_45px_rgba(139,92,246,0.35)] backdrop-blur-2xl">
+      <div className="w-full max-w-2xl flex items-start gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl bg-[#0F091E]/95 border border-purple-500/50 shadow-[0_15px_45px_rgba(139,92,246,0.35)]">
         <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-tr from-purple-600 via-indigo-600 to-purple-400 p-0.5 border border-purple-400/60 shrink-0 shadow-lg purple-glow-sm">
           <img src="/logo.png" alt="Nova Mascot" className="w-full h-full rounded-full object-cover" />
         </div>
@@ -158,8 +158,8 @@ function GeneratedClip2({ elapsed, startTime, endTime }) {
     >
       {/* Background Soft Purple Aurora Glow */}
       <div className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none">
-        <div className="w-[36rem] h-[28rem] rounded-full bg-purple-600/20 blur-3xl animate-pulse" />
-        <div className="w-[28rem] h-[24rem] rounded-full bg-indigo-600/15 blur-3xl" />
+        <div className="w-[36rem] h-[28rem] rounded-full bg-purple-600/20 blur-3xl [transform:translateZ(0)] animate-pulse" />
+        <div className="w-[28rem] h-[24rem] rounded-full bg-indigo-600/15 blur-3xl [transform:translateZ(0)]" />
       </div>
 
       {/* Top Title & Subtitle */}
@@ -174,7 +174,7 @@ function GeneratedClip2({ elapsed, startTime, endTime }) {
 
       {/* Floating 3D Search Pill Bar */}
       <div className="w-full max-w-lg mb-6 relative">
-        <div className="flex items-center justify-between px-4 py-2.5 rounded-full bg-[#140E24]/90 border border-purple-500/40 shadow-[0_8px_30px_rgba(139,92,246,0.3)] backdrop-blur-xl">
+        <div className="flex items-center justify-between px-4 py-2.5 rounded-full bg-[#140E24]/90 border border-purple-500/40 shadow-[0_8px_30px_rgba(139,92,246,0.3)]">
           <div className="flex items-center gap-2.5 text-xs sm:text-sm text-zinc-400">
             <Search className="w-4 h-4 text-purple-400 shrink-0" />
             <span className="truncate">Search Nova docs & workspace with AI...</span>
@@ -189,7 +189,7 @@ function GeneratedClip2({ elapsed, startTime, endTime }) {
       <div className="relative w-full max-w-lg h-56 select-none">
         {/* Card 1: Knowledge & Docs Engine (Back) */}
         <div
-          className="absolute inset-x-0 p-4 rounded-2xl bg-[#140E26]/90 border border-purple-500/30 shadow-lg backdrop-blur-xl transition-all duration-700 ease-out flex items-center gap-3.5"
+          className="absolute inset-x-0 p-4 rounded-2xl bg-[#140E26]/90 border border-purple-500/30 shadow-lg will-change-transform flex items-center gap-3.5"
           style={{
             transform: `translateY(${-44 * progress}px) scale(${0.92 + progress * 0.02})`,
             zIndex: 10,
@@ -214,7 +214,7 @@ function GeneratedClip2({ elapsed, startTime, endTime }) {
 
         {/* Card 2: Multilingual Real-Time Voice Assistant (Middle) */}
         <div
-          className="absolute inset-x-0 p-4 rounded-2xl bg-[#1A1232]/95 border border-purple-500/40 shadow-xl backdrop-blur-xl transition-all duration-700 ease-out flex items-center gap-3.5"
+          className="absolute inset-x-0 p-4 rounded-2xl bg-[#1A1232]/95 border border-purple-500/40 shadow-xl will-change-transform flex items-center gap-3.5"
           style={{
             transform: `translateY(${-18 * progress}px) scale(${0.96 + progress * 0.01})`,
             zIndex: 20,
@@ -238,7 +238,7 @@ function GeneratedClip2({ elapsed, startTime, endTime }) {
 
         {/* Card 3: Intelligent Cosmic Workspace Suite (Front & Prominent) */}
         <div
-          className="absolute inset-x-0 p-4 rounded-2xl bg-gradient-to-r from-[#20143D] to-[#170E2D] border border-purple-400/50 shadow-[0_15px_45px_rgba(139,92,246,0.4)] backdrop-blur-2xl transition-all duration-700 ease-out flex items-center gap-3.5"
+          className="absolute inset-x-0 p-4 rounded-2xl bg-gradient-to-r from-[#20143D] to-[#170E2D] border border-purple-400/50 shadow-[0_15px_45px_rgba(139,92,246,0.4)] will-change-transform flex items-center gap-3.5"
           style={{
             transform: `translateY(${12 * progress}px) scale(1)`,
             zIndex: 30,
@@ -375,7 +375,7 @@ export function NovaIntro({ onComplete }) {
         diff = now - startTimeRef.current;
       }
 
-      setElapsed(diff);
+      setElapsed(Math.round(diff));
 
       if (diff >= INTRO_CONFIG.phase7_finaleEnd) {
         finishIntro();
@@ -480,7 +480,7 @@ export function NovaIntro({ onComplete }) {
       {/* Dynamic Ambient Background Blobs (Drifting slowly, 4K smooth grading) */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div
-          className="absolute -top-32 -left-32 w-96 h-96 lg:w-[36rem] lg:h-[36rem] rounded-full bg-[#8B5CF6]/15 blur-3xl"
+          className="absolute -top-32 -left-32 w-96 h-96 lg:w-[36rem] lg:h-[36rem] rounded-full bg-[#8B5CF6]/15 blur-3xl [transform:translateZ(0)]"
           style={{
             transform: `translate3d(${Math.sin(elapsed / 2000) * 20}px, ${
               Math.cos(elapsed / 2500) * 20
@@ -488,7 +488,7 @@ export function NovaIntro({ onComplete }) {
           }}
         />
         <div
-          className="absolute top-1/3 -right-24 w-[28rem] h-[28rem] lg:w-[40rem] lg:h-[40rem] rounded-full bg-[#A855F7]/12 blur-3xl"
+          className="absolute top-1/3 -right-24 w-[28rem] h-[28rem] lg:w-[40rem] lg:h-[40rem] rounded-full bg-[#A855F7]/12 blur-3xl [transform:translateZ(0)]"
           style={{
             transform: `translate3d(${Math.cos(elapsed / 2200) * -25}px, ${
               Math.sin(elapsed / 2800) * 20
@@ -496,7 +496,7 @@ export function NovaIntro({ onComplete }) {
           }}
         />
         <div
-          className="absolute -bottom-24 left-1/4 w-[32rem] h-[32rem] lg:w-[44rem] lg:h-[44rem] rounded-full bg-[#6366F1]/10 blur-3xl"
+          className="absolute -bottom-24 left-1/4 w-[32rem] h-[32rem] lg:w-[44rem] lg:h-[44rem] rounded-full bg-[#6366F1]/10 blur-3xl [transform:translateZ(0)]"
           style={{
             transform: `translate3d(${Math.sin(elapsed / 1800) * 15}px, ${
               Math.cos(elapsed / 2100) * -15
@@ -548,7 +548,7 @@ export function NovaIntro({ onComplete }) {
             ======================================================== */}
         {isPhase1 && (
           <div
-            className="flex items-center gap-4 sm:gap-6 md:gap-8 transition-all duration-700 ease-out"
+            className="flex items-center gap-4 sm:gap-6 md:gap-8 will-change-transform"
             style={{
               opacity: p1LogoOpacity * (1 - p2Progress),
               transform: `scale(${p1LogoScale}) translateY(${p2Progress * -50}px)`,
@@ -591,7 +591,7 @@ export function NovaIntro({ onComplete }) {
             ======================================================== */}
         {isPhase2 && !isPhase4_Clip1 && (
           <div
-            className="flex flex-col items-center w-full max-w-xl mx-auto px-4 transition-all duration-700 ease-out"
+            className="flex flex-col items-center w-full max-w-xl mx-auto px-4 will-change-transform"
             style={{
               opacity: p2Progress,
               transform: `translateY(${(1 - p2Progress) * 35}px)`,
@@ -619,7 +619,7 @@ export function NovaIntro({ onComplete }) {
             <div className="relative w-full group">
               <div className="absolute -inset-0.5 rounded-2xl sm:rounded-full bg-gradient-to-r from-purple-600/30 via-indigo-500/25 to-purple-500/30 blur-md opacity-75" />
 
-              <div className="relative flex items-center justify-between w-full px-4 sm:px-5 py-3.5 sm:py-4 rounded-2xl sm:rounded-full bg-[#110B1E]/90 backdrop-blur-xl border border-purple-500/30 shadow-[0_12px_40px_rgba(0,0,0,0.65)] text-left">
+              <div className="relative flex items-center justify-between w-full px-4 sm:px-5 py-3.5 sm:py-4 rounded-2xl sm:rounded-full bg-[#110B1E]/90 border border-purple-500/30 shadow-[0_12px_40px_rgba(0,0,0,0.65)] text-left">
                 <div className="w-8 h-8 rounded-full bg-white/[0.04] flex items-center justify-center text-zinc-400 mr-3 shrink-0">
                   <Plus className="w-4 h-4" />
                 </div>
@@ -674,7 +674,7 @@ export function NovaIntro({ onComplete }) {
           <div className="relative w-full h-full flex items-center justify-center">
             {isCodeStream && (
               <div className="absolute inset-0 flex flex-col justify-center items-center pointer-events-none p-6 animate-fade-in">
-                <div className="absolute top-10 right-8 sm:right-16 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1A1230]/80 border border-purple-500/40 backdrop-blur-md shadow-[0_0_15px_rgba(139,92,246,0.25)]">
+                <div className="absolute top-10 right-8 sm:right-16 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1A1230]/80 border border-purple-500/40 shadow-[0_0_15px_rgba(139,92,246,0.25)]">
                   <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
                   <span className="text-xs font-medium text-purple-200">
                     Help me in coding
@@ -745,7 +745,7 @@ export function NovaIntro({ onComplete }) {
             ======================================================== */}
         {isPhase7_Finale && (
           <div
-            className="flex items-center justify-center transition-all duration-700 ease-in-out"
+            className="flex items-center justify-center will-change-transform"
             style={{
               transform: `translate3d(${
                 handoverProgress * -window.innerWidth * 0.42

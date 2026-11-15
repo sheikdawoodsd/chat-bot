@@ -497,6 +497,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
             dispatch({ type: 'SET_STATUS', status: 'thinking' });
             const formData = new FormData();
             formData.append('audio', blob, 'voice.webm');
+            if (selectedLang && selectedLang !== 'auto') formData.append('lang', selectedLang);
             const res = await fetch('/api/transcribe', { method: 'POST', body: formData });
             const data = await res.json().catch(() => ({}));
             if (data.text) handleTurnSubmit(data.text);
