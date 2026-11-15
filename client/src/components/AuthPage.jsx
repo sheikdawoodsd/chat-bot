@@ -351,7 +351,7 @@ export function AuthPage() {
 
       {/* Footer */}
       <footer className="w-full text-center py-4 text-xs text-gray-400 dark:text-zinc-600 z-10">
-        Hi Nova! AI Chatbot • Secured with 30-day session cookies & SQLite storage
+        Hi Nova! AI Chatbot • Secured with 30-day session cookies & permanent cloud storage
       </footer>
     </div>
   );

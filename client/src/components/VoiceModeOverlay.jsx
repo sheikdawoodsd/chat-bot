@@ -393,7 +393,6 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
       }
 
       dispatch({ type: 'SET_STATUS', status: 'listening' });
-      playCue(880);
       hasSpokenRef.current = false;
       chunksRef.current = [];
 
