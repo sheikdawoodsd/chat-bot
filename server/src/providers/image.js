@@ -234,7 +234,7 @@ async function generateFreeFallbackImage(prompt, aspectRatio = '1:1') {
 
   const fetchAttempt = async (url) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 28000);
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
     try {
       const res = await fetch(url, {
@@ -290,7 +290,7 @@ async function generateFreeFallbackImage(prompt, aspectRatio = '1:1') {
 
     if (res && (res.status === 402 || res.headers.get('payment-required') || res.headers.get('retry-after'))) {
       const retryAfterRaw = res.headers.get('retry-after');
-      const waitSec = retryAfterRaw ? Math.min(50, Math.max(5, parseInt(retryAfterRaw, 10))) : 48;
+      const waitSec = retryAfterRaw ? Math.min(12, Math.max(3, parseInt(retryAfterRaw, 10))) : 10;
       console.log(`[Nova Image] Cooldown detected (HTTP ${res.status}). Waiting ${waitSec}s before retrying...`);
       await new Promise((resolve) => setTimeout(resolve, waitSec * 1000));
       // Retry with a fresh seed to avoid cache
@@ -332,7 +332,7 @@ async function generateFreeFallbackImage(prompt, aspectRatio = '1:1') {
           if (isBanner) {
             console.warn(`[Nova Image] Detected rate-limit banner (${(buffer.length / 1024).toFixed(1)}KB)! Waiting 48s and retrying with alternate...`);
             // Wait the full cooldown period (45s + buffer) and retry
-            await new Promise((resolve) => setTimeout(resolve, 48000));
+            await new Promise((resolve) => setTimeout(resolve, 10000));
             const cooldownSeed = Math.floor(Date.now() % 1000000) + 42;
             const cooldownUrl = url.replace(/seed=\d+/, `seed=${cooldownSeed}`);
             try {
@@ -418,6 +418,48 @@ export async function performVisionSelfCheck({ imageBase64, mimeType, prompt }) 
 }
 
 /**
+ * Fast, reliable generation with Gemini's native image model (primary engine).
+ */
+async function generateWithGeminiModel(prompt, aspectRatio = '1:1') {
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey || apiKey.includes('paste_your_key')) throw new Error('Gemini key not configured');
+  const ai = new GoogleGenAI({ apiKey });
+  const models = [...new Set([process.env.GEMINI_IMAGE_MODEL, 'gemini-2.5-flash-image'].filter(Boolean))];
+  let lastErr = null;
+  for (const model of models) {
+    try {
+      const call = ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          responseModalities: ['IMAGE', 'TEXT'],
+          imageConfig: { aspectRatio },
+        },
+      });
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('Gemini image timeout')), 45000));
+      const res = await Promise.race([call, timeout]);
+      const parts = res?.candidates?.[0]?.content?.parts || [];
+      const img = parts.find((pt) => pt.inlineData && pt.inlineData.data);
+      if (img) {
+        const mimeType = img.inlineData.mimeType || 'image/png';
+        return {
+          imageUrl: `data:${mimeType};base64,${img.inlineData.data}`,
+          mimeType,
+          text: '',
+          model,
+          promptUsed: prompt,
+        };
+      }
+      lastErr = new Error('Gemini returned no image');
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[Nova Image] Gemini model ${model} failed:`, err.message);
+    }
+  }
+  throw lastErr || new Error('Gemini image failed');
+}
+
+/**
  * Main Image Generation Function
  * Returns both the generated image and the professional 10-point Gemini prompt.
  */
@@ -430,24 +472,35 @@ export async function generateGeminiImage({
 }) {
   reloadEnv();
   const rawPrompt = (prompt || '').trim();
+  const styleHint = STYLE_ENHANCERS[style] ? `, ${STYLE_ENHANCERS[style]}` : '';
 
-  // 1. In parallel: expand concise prompt for generator AND create full 10-point Gemini prompt
-  const [promptUsed, geminiPrompt] = await Promise.all([
-    expandImagePrompt({
+  // Detailed Gemini prompt is produced in parallel so it never slows the image down
+  const geminiPromptPromise = generateGeminiDetailedPrompt({ userPrompt: rawPrompt, style, aspectRatio });
+
+  let result = null;
+  let promptUsed = `${rawPrompt}${styleHint}`;
+  try {
+    result = await generateWithGeminiModel(promptUsed, aspectRatio);
+  } catch (err) {
+    console.warn('[Nova Image] Gemini engine unavailable, using backup engine:', err.message);
+  }
+
+  if (!result) {
+    promptUsed = await expandImagePrompt({
       userPrompt: rawPrompt,
       style,
       aspectRatio,
       previousContext: previousImageBase64 ? 'Refining or modifying previous image' : null,
-    }),
-    generateGeminiDetailedPrompt({
-      userPrompt: rawPrompt,
-      style,
-      aspectRatio,
-    }),
-  ]);
+    });
+    try {
+      result = await generateFreeFallbackImage(promptUsed, aspectRatio);
+    } catch (err) {
+      console.warn('[Nova Image] Backup engine failed:', err.message);
+      result = generateProceduralFallbackImage(rawPrompt, aspectRatio);
+    }
+  }
 
-  // 2. Generate actual visual image
-  const result = await generateFreeFallbackImage(promptUsed, aspectRatio);
+  const geminiPrompt = await geminiPromptPromise;
 
   return {
     ...result,

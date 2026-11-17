@@ -31,7 +31,7 @@ class AudioPlayerService {
     // Load saved volume and voice
     try {
       const savedVol = localStorage.getItem('nova_audio_volume');
-      if (savedVol !== null) this.volume = parseFloat(savedVol);
+      if (savedVol !== null) this.volume = Math.max(0.9, parseFloat(savedVol) || 1);
       const savedVoice = localStorage.getItem('nova_tts_voice');
       if (savedVoice) this.selectedVoice = savedVoice;
       const savedRate = localStorage.getItem('nova_speech_rate');
@@ -299,6 +299,32 @@ class AudioPlayerService {
     }
   }
 
+  /**
+   * Route the TTS element through a gain + compressor chain so speech is clearly
+   * louder on quiet phone speakers without clipping.
+   */
+  ensureLoudness(audio) {
+    if (this._loudnessReady || !this.audioContext) return;
+    try {
+      const ctx = this.audioContext;
+      const src = ctx.createMediaElementSource(audio);
+      const gain = ctx.createGain();
+      gain.gain.value = 2.6;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -18;
+      comp.knee.value = 12;
+      comp.ratio.value = 6;
+      comp.attack.value = 0.003;
+      comp.release.value = 0.2;
+      src.connect(gain);
+      gain.connect(comp);
+      comp.connect(ctx.destination);
+      this._loudnessReady = true;
+    } catch (e) {
+      this._loudnessReady = true;
+    }
+  }
+
   playAudioUrl(url, signal) {
     return new Promise((resolve) => {
       if (!this.audioElement) {
@@ -308,6 +334,10 @@ class AudioPlayerService {
       const audio = this.audioElement;
       audio.volume = this.volume;
       audio.playbackRate = this.speechRate;
+      this.ensureLoudness(audio);
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        try { this.audioContext.resume(); } catch {}
+      }
       audio.src = url;
 
       let hasCleanedUp = false;
