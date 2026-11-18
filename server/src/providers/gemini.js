@@ -205,6 +205,8 @@ TEMPORAL CONTEXT:
 /**
  * Stream responses from Google Gemini with search grounding, fallback chaining, and multimodal support
  */
+let voiceThinkingRejected = false;
+
 export async function streamGemini({
   messages,
   systemPrompt,
@@ -437,7 +439,8 @@ export async function streamGemini({
   const wantsSearch = !isVoiceMode && searchIntentRegex.test(lastUserMsg);
   let triedWithGrounding = wantsSearch;
 
-  for (const modelToTry of candidateModels) {
+  for (let modelIdx = 0; modelIdx < candidateModels.length; modelIdx++) {
+    const modelToTry = candidateModels[modelIdx];
     if (signal?.aborted) return;
 
     try {
@@ -447,7 +450,7 @@ export async function streamGemini({
         maxOutputTokens: isVoiceMode ? 300 : 8192,
       };
       // Voice replies must start instantly: skip internal "thinking" for the fast voice model
-      if (isVoiceMode) config.thinkingConfig = { thinkingBudget: 0 };
+      if (isVoiceMode && !voiceThinkingRejected) config.thinkingConfig = { thinkingBudget: 0 };
 
       if (triedWithGrounding) {
         config.tools = [{ googleSearch: {} }];
@@ -499,6 +502,14 @@ export async function streamGemini({
     } catch (error) {
       if (signal?.aborted) return;
       const msg = error.message || '';
+
+      // If the model rejects the thinking setting, remember it and retry the SAME model without it
+      if (isVoiceMode && !voiceThinkingRejected && /thinking/i.test(msg)) {
+        voiceThinkingRejected = true;
+        console.warn(`[Nova] ${modelToTry} rejected thinkingConfig; retrying without it.`);
+        modelIdx--;
+        continue;
+      }
 
       if (triedWithGrounding && (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('grounding') || msg.includes('tools'))) {
         console.warn(`[Nova] Grounding quota hit for ${modelToTry}. Retrying smoothly without live search grounding...`);

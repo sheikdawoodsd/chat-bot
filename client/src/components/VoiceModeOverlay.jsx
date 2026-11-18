@@ -87,6 +87,8 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
     }
   });
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const selectedLangRef = useRef(selectedLang);
+  selectedLangRef.current = selectedLang;
 
   // Audio & State Refs
   const streamRef = useRef(null);
@@ -397,17 +399,17 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
       chunksRef.current = [];
 
       // 1. Fast On-Device Speech Recognition (100% accurate, zero latency)
-      if (SpeechRecognitionClass) {
+      // Auto language -> record and let Gemini detect Tamil / Hindi / English accurately.
+      // A language chosen explicitly -> fast on-device recognition in that language.
+      const activeLang = selectedLangRef.current;
+      if (SpeechRecognitionClass && activeLang !== 'auto') {
         const recognition = new SpeechRecognitionClass();
         recognitionRef.current = recognition;
         recognition.continuous = false;
         recognition.interimResults = true;
 
-        const langObj = SUPPORTED_LANGUAGES.find((l) => l.id === selectedLang);
-        const activeLangCode =
-          langObj?.id === 'auto'
-            ? (typeof navigator !== 'undefined' ? navigator.language || 'en-US' : 'en-US')
-            : (langObj?.code || 'en-US');
+        const langObj = SUPPORTED_LANGUAGES.find((l) => l.id === activeLang);
+        const activeLangCode = langObj?.code || 'en-US';
         recognition.lang = activeLangCode;
 
         let capturedText = '';
@@ -481,32 +483,126 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
           recognition.start();
         } catch {}
       } else {
-        // Fallback: MediaRecorder with fast 500ms voice silence cutoff
-        const recorder = new MediaRecorder(streamRef.current);
+        // MediaRecorder + voice-activity detection: stop ~0.7s after the user finishes speaking,
+        // then Gemini transcribes (auto-detects Tamil / Hindi / English).
+        let mime = '';
+        for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']) {
+          if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(m)) {
+            mime = m;
+            break;
+          }
+        }
+        const recorder = new MediaRecorder(streamRef.current, mime ? { mimeType: mime } : undefined);
         recorderRef.current = recorder;
+        let shouldSend = false;
 
         recorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
         };
 
         recorder.onstop = async () => {
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mime || 'audio/webm' });
           chunksRef.current = [];
-          if (blob.size > 600) {
-            dispatch({ type: 'SET_STATUS', status: 'thinking' });
+          if (!isOpenRef.current || recorderRef.current !== recorder) return;
+          if (!shouldSend || blob.size < 1500) {
+            startListeningLoop();
+            return;
+          }
+          isSubmittingTurnRef.current = true;
+          dispatch({ type: 'SET_STATUS', status: 'thinking' });
+          try {
             const formData = new FormData();
             formData.append('audio', blob, 'voice.webm');
-            if (selectedLang && selectedLang !== 'auto') formData.append('lang', selectedLang);
+            if (activeLang && activeLang !== 'auto') formData.append('lang', activeLang);
             const res = await fetch('/api/transcribe', { method: 'POST', body: formData });
             const data = await res.json().catch(() => ({}));
-            if (data.text) handleTurnSubmit(data.text);
-            else startListeningLoop();
-          } else {
-            startListeningLoop();
+            if (!isOpenRef.current) return;
+            if (data.text && data.text.trim()) {
+              handleTurnSubmit(data.text.trim());
+            } else if (!res.ok) {
+              isSubmittingTurnRef.current = false;
+              dispatch({
+                type: 'SET_ERROR',
+                error: data.error || 'I could not understand that. Please try again.',
+              });
+            } else {
+              isSubmittingTurnRef.current = false;
+              startListeningLoop();
+            }
+          } catch {
+            isSubmittingTurnRef.current = false;
+            if (isOpenRef.current) {
+              dispatch({ type: 'SET_ERROR', error: 'Connection problem. Please try again.' });
+            }
           }
         };
 
         recorder.start(100);
+        console.debug('[Nova VAD] recording started');
+
+        // Voice-activity detection using the live mic analyser
+        let analyser = analyserRef.current;
+        if (!analyser && audioContextRef.current) {
+          try {
+            const src = audioContextRef.current.createMediaStreamSource(streamRef.current);
+            analyser = audioContextRef.current.createAnalyser();
+            analyser.fftSize = 512;
+            src.connect(analyser);
+            analyserRef.current = analyser;
+          } catch {}
+        }
+        const samples = analyser ? new Uint8Array(analyser.fftSize) : null;
+        const startedAt = performance.now();
+        let speechStartAt = 0;
+        let lastVoiceAt = 0;
+        let noiseFloor = 0.01;
+        let calibrated = 0;
+
+        const vadTick = () => {
+          if (!isOpenRef.current || recorderRef.current !== recorder || recorder.state !== 'recording') return;
+          const now = performance.now();
+          let rms = 0;
+          if (analyser && samples) {
+            analyser.getByteTimeDomainData(samples);
+            let sum = 0;
+            for (let k = 0; k < samples.length; k++) {
+              const d = (samples[k] - 128) / 128;
+              sum += d * d;
+            }
+            rms = Math.sqrt(sum / samples.length);
+          }
+          // Learn the room's background noise during the first 400ms
+          if (now - startedAt < 400) {
+            noiseFloor = Math.max(noiseFloor, rms);
+            calibrated++;
+          }
+          const threshold = Math.max(0.02, noiseFloor * 2.2);
+          if (rms > threshold) {
+            if (!speechStartAt) {
+              console.debug('[Nova VAD] speech detected');
+              speechStartAt = now;
+              hasSpokenRef.current = true;
+            }
+            lastVoiceAt = now;
+          }
+          const spoke = speechStartAt > 0;
+          const finished = spoke && now - lastVoiceAt > 700 && lastVoiceAt - speechStartAt > 250;
+          const tooLong = spoke && now - speechStartAt > 25000;
+          const idleTooLong = !spoke && now - startedAt > 30000;
+          if (finished || tooLong) {
+            console.debug('[Nova VAD] speech finished, sending audio');
+            shouldSend = true;
+            try { recorder.stop(); } catch {}
+            return;
+          }
+          if (idleTooLong) {
+            shouldSend = false;
+            try { recorder.stop(); } catch {}
+            return;
+          }
+          silenceTimerRef.current = setTimeout(vadTick, 50);
+        };
+        silenceTimerRef.current = setTimeout(vadTick, 50);
       }
     } catch (err) {
       console.error('[Nova Voice] Mic setup error:', err);

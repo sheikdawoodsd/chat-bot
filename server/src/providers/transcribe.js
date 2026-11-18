@@ -20,6 +20,8 @@ const TRANSCRIPTION_PROMPT =
  */
 const LANG_NAMES = { 'ta-IN': 'Tamil', 'hi-IN': 'Hindi', 'en-US': 'English', 'es-ES': 'Spanish', 'fr-FR': 'French' };
 
+let thinkingRejected = false;
+
 export async function transcribeAudio({ buffer, mimeType, lang }) {
   reloadEnv();
   const apiKey = (process.env.GEMINI_API_KEY || '').trim();
@@ -59,8 +61,10 @@ export async function transcribeAudio({ buffer, mimeType, lang }) {
   for (const model of models) {
     try {
       console.log(`[Nova Transcribe] Transcribing with model ${model} (${normalizedMime}, ${buffer.length} bytes)...`);
-      const response = await ai.models.generateContent({
+      const callConfig = thinkingRejected ? { temperature: 0 } : { temperature: 0, thinkingConfig: { thinkingBudget: 0 } };
+      const request = {
         model,
+        config: callConfig,
         contents: [
           {
             role: 'user',
@@ -77,7 +81,19 @@ export async function transcribeAudio({ buffer, mimeType, lang }) {
             ],
           },
         ],
-      });
+      };
+      let response;
+      try {
+        response = await ai.models.generateContent(request);
+      } catch (e1) {
+        if (/thinking/i.test(e1.message || '')) {
+          thinkingRejected = true;
+          request.config = { temperature: 0 };
+          response = await ai.models.generateContent(request);
+        } else {
+          throw e1;
+        }
+      }
 
       const text = (response.text || '').trim();
       if (!text || text === '<noise>' || text === '<applause>') {
