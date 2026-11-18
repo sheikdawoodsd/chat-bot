@@ -107,6 +107,13 @@ class AudioPlayerService {
     } catch {}
   }
 
+  resolveLang(selected, text) {
+    if (selected && selected !== 'auto') return selected;
+    if (/[\u0B80-\u0BFF]/.test(text || '')) return 'ta-IN';
+    if (/[\u0900-\u097F]/.test(text || '')) return 'hi-IN';
+    return 'auto';
+  }
+
   setLanguage(lang) {
     this.selectedLang = lang || 'auto';
   }
@@ -235,7 +242,7 @@ class AudioPlayerService {
         body: JSON.stringify({
           text: sentence,
           voice: this.selectedVoice,
-          lang: this.selectedLang || 'auto',
+          lang: this.resolveLang(this.selectedLang, sentence),
         }),
         signal,
       })
@@ -552,7 +559,7 @@ class AudioPlayerService {
       body: JSON.stringify({
         text: sentence,
         voice: this.selectedVoice,
-        lang: this.selectedLang || 'auto',
+        lang: this.resolveLang(this.selectedLang, sentence),
       }),
       signal,
     })

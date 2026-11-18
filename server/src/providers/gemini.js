@@ -228,12 +228,24 @@ export async function streamGemini({
   const chatModel = model || process.env.GEMINI_MODEL || 'gemini-3.5-flash';
   const primaryModel = isVoiceMode ? voiceModel : chatModel;
 
-  const instruction = buildNovaSystemPrompt({
+  let instruction = buildNovaSystemPrompt({
     isVoiceMode,
     workspaceMode,
     userTimezone,
     customPrompt: systemPrompt,
   });
+
+  // Voice mode: lock the reply language to the language the user just spoke
+  if (isVoiceMode) {
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const lastText = typeof lastUser?.content === 'string' ? lastUser.content : '';
+    let lockLang = null;
+    if (/[\u0B80-\u0BFF]/.test(lastText)) lockLang = 'Tamil (தமிழ் script)';
+    else if (/[\u0900-\u097F]/.test(lastText)) lockLang = 'Hindi (हिन्दी Devanagari script)';
+    if (lockLang) {
+      instruction += `\n\nLANGUAGE LOCK: The user's latest message is in ${lockLang}. Reply ONLY in ${lockLang}. Do not reply in English. Answer the actual question correctly and completely.`;
+    }
+  }
 
   // Keep the last ~20 messages as conversation context
   const contextMessages = messages.slice(-20);

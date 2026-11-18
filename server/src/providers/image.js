@@ -420,7 +420,10 @@ export async function performVisionSelfCheck({ imageBase64, mimeType, prompt }) 
 /**
  * Fast, reliable generation with Gemini's native image model (primary engine).
  */
+let geminiImageBlockedUntil = 0;
+
 async function generateWithGeminiModel(prompt, aspectRatio = '1:1') {
+  if (Date.now() < geminiImageBlockedUntil) throw new Error('Gemini image quota exhausted (cached)');
   const apiKey = (process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey || apiKey.includes('paste_your_key')) throw new Error('Gemini key not configured');
   const ai = new GoogleGenAI({ apiKey });
@@ -453,7 +456,8 @@ async function generateWithGeminiModel(prompt, aspectRatio = '1:1') {
       lastErr = new Error('Gemini returned no image');
     } catch (err) {
       lastErr = err;
-      console.warn(`[Nova Image] Gemini model ${model} failed:`, err.message);
+      if (/429|RESOURCE_EXHAUSTED|quota/i.test(err.message || '')) geminiImageBlockedUntil = Date.now() + 15 * 60 * 1000;
+      console.warn(`[Nova Image] Gemini model ${model} failed:`, (err.message || '').slice(0, 160));
     }
   }
   throw lastErr || new Error('Gemini image failed');
