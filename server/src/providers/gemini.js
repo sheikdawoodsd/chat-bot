@@ -444,8 +444,10 @@ export async function streamGemini({
       const config = {
         systemInstruction: instruction,
         temperature: 0.35,
-        maxOutputTokens: isVoiceMode ? 512 : 8192,
+        maxOutputTokens: isVoiceMode ? 300 : 8192,
       };
+      // Voice replies must start instantly: skip internal "thinking" for the fast voice model
+      if (isVoiceMode) config.thinkingConfig = { thinkingBudget: 0 };
 
       if (triedWithGrounding) {
         config.tools = [{ googleSearch: {} }];

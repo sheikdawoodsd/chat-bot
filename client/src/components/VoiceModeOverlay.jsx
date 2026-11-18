@@ -276,7 +276,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
             dispatch({ type: 'SET_CAPTION', caption: '' });
             setTimeout(() => {
               if (isOpenRef.current) startListeningLoop();
-            }, 250);
+            }, 100);
           }
         },
       });
@@ -428,7 +428,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
             hasSpokenRef.current = true;
             dispatch({ type: 'SET_TRANSCRIPT', transcript: currentWords });
 
-            // Fast Voice Activity Detection (VAD): Trigger response after 750ms silence
+            // Fast Voice Activity Detection (VAD): Trigger response after 600ms silence
             if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
             silenceTimerRef.current = setTimeout(() => {
               silenceTimerRef.current = null;
@@ -440,7 +440,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
                 } catch {}
                 handleTurnSubmit(currentWords);
               }
-            }, 750);
+            }, 600);
           }
         };
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import {
   Menu,
   Plus,
@@ -25,9 +25,13 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { TypingIndicator } from './components/TypingIndicator';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { ThemeToggle } from './components/ThemeToggle';
-import { VoiceModeOverlay } from './components/VoiceModeOverlay';
+const VoiceModeOverlay = lazy(() =>
+  import('./components/VoiceModeOverlay').then((m) => ({ default: m.VoiceModeOverlay }))
+);
 import { ImageLightbox } from './components/ImageLightbox';
-import { ImageStudioWorkspace } from './components/ImageStudioWorkspace';
+const ImageStudioWorkspace = lazy(() =>
+  import('./components/ImageStudioWorkspace').then((m) => ({ default: m.ImageStudioWorkspace }))
+);
 import { CosmicBackground } from './components/CosmicBackground';
 import { NovaIntro } from './components/NovaIntro';
 import { LibraryModal } from './components/LibraryModal';
@@ -780,6 +784,7 @@ function ChatWorkspace({ onReplayIntro }) {
 
         {/* Image Studio Expanded Workspace (When user selects 'Hide Chat') */}
         {workspaceMode === 'image' && isImageChatHidden ? (
+          <Suspense fallback={null}>
           <ImageStudioWorkspace
             messages={messages}
             isStreaming={isStreaming}
@@ -789,6 +794,7 @@ function ChatWorkspace({ onReplayIntro }) {
             isChatHidden={true}
             onToggleChat={toggleImageStudioChat}
           />
+          </Suspense>
         ) : (
           <>
             {/* Center Messages / Welcome Area */}
@@ -903,11 +909,15 @@ function ChatWorkspace({ onReplayIntro }) {
       />
 
       {/* Redesigned Glassmorphism Voice Assistant Overlay (Image 2) */}
-      <VoiceModeOverlay
-        isOpen={isVoiceModeOpen}
-        onClose={() => setIsVoiceModeOpen(false)}
-        onSendVoiceMessage={handleVoiceMessage}
-      />
+      {isVoiceModeOpen && (
+        <Suspense fallback={null}>
+          <VoiceModeOverlay
+            isOpen={isVoiceModeOpen}
+            onClose={() => setIsVoiceModeOpen(false)}
+            onSendVoiceMessage={handleVoiceMessage}
+          />
+        </Suspense>
+      )}
 
       {/* Image Lightbox Modal */}
       <ImageLightbox
