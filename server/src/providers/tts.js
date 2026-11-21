@@ -138,6 +138,7 @@ export async function generateTTS({ text, voice = 'Kore', model, lang = 'auto' }
         model: modelToTry,
         contents: ttsContents,
         config: {
+          abortSignal: controller.signal,
           responseModalities: ['AUDIO'],
           speechConfig: {
             voiceConfig: {

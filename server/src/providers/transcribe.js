@@ -20,7 +20,7 @@ const TRANSCRIPTION_PROMPT =
  */
 const LANG_NAMES = { 'ta-IN': 'Tamil', 'hi-IN': 'Hindi', 'en-US': 'English', 'es-ES': 'Spanish', 'fr-FR': 'French' };
 
-let thinkingRejected = false;
+let thinkMode = 0; // 0 thinkingLevel low, 1 thinkingBudget, 2 none
 
 export async function transcribeAudio({ buffer, mimeType, lang }) {
   reloadEnv();
@@ -61,7 +61,13 @@ export async function transcribeAudio({ buffer, mimeType, lang }) {
   for (const model of models) {
     try {
       console.log(`[Nova Transcribe] Transcribing with model ${model} (${normalizedMime}, ${buffer.length} bytes)...`);
-      const callConfig = thinkingRejected ? { temperature: 0 } : { temperature: 0, thinkingConfig: { thinkingBudget: 0 } };
+      const mkConfig = () => {
+        const c = { temperature: 0 };
+        if (thinkMode === 0) c.thinkingConfig = { thinkingLevel: 'low' };
+        else if (thinkMode === 1) c.thinkingConfig = { thinkingBudget: 256 };
+        return c;
+      };
+      const callConfig = mkConfig();
       const request = {
         model,
         config: callConfig,
@@ -83,17 +89,24 @@ export async function transcribeAudio({ buffer, mimeType, lang }) {
         ],
       };
       let response;
-      try {
-        response = await ai.models.generateContent(request);
-      } catch (e1) {
-        if (/thinking/i.test(e1.message || '')) {
-          thinkingRejected = true;
-          request.config = { temperature: 0 };
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 15000);
+        request.config = { ...mkConfig(), abortSignal: ctl.signal };
+        try {
           response = await ai.models.generateContent(request);
-        } else {
+          clearTimeout(timer);
+          break;
+        } catch (e1) {
+          clearTimeout(timer);
+          if (thinkMode < 2 && (/thinking/i.test(e1.message || '') || /INVALID_ARGUMENT|\b400\b/.test(e1.message || ''))) {
+            thinkMode++;
+            continue;
+          }
           throw e1;
         }
       }
+      if (!response) throw new Error('No response');
 
       const text = (response.text || '').trim();
       if (!text || text === '<noise>' || text === '<applause>') {

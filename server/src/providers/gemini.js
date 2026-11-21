@@ -206,6 +206,15 @@ TEMPORAL CONTEXT:
  * Stream responses from Google Gemini with search grounding, fallback chaining, and multimodal support
  */
 let voiceThinkingRejected = false;
+// Thinking control differs between Gemini generations; remember what the API accepts.
+// 0 = thinkingLevel 'low', 1 = thinkingBudget 256, 2 = no thinking config
+let thinkingMode = 0;
+const FIRST_CHUNK_TIMEOUT_MS = 12000;
+function thinkingConfigFor() {
+  if (thinkingMode === 0) return { thinkingLevel: 'low' };
+  if (thinkingMode === 1) return { thinkingBudget: 256 };
+  return undefined;
+}
 
 export async function streamGemini({
   messages,
@@ -227,7 +236,7 @@ export async function streamGemini({
   }
 
   const voiceModel = process.env.GEMINI_VOICE_MODEL || 'gemini-3.5-flash-lite';
-  const chatModel = model || process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+  const chatModel = model || process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash-lite';
   const primaryModel = isVoiceMode ? voiceModel : chatModel;
 
   let instruction = buildNovaSystemPrompt({
@@ -444,28 +453,47 @@ export async function streamGemini({
     if (signal?.aborted) return;
 
     try {
+      // Per-attempt abort: if the model sends nothing within the timeout, give up and try the next one
+      const attemptCtl = new AbortController();
+      let firstChunkSeen = false;
+      const firstChunkTimer = setTimeout(() => {
+        if (!firstChunkSeen) attemptCtl.abort();
+      }, FIRST_CHUNK_TIMEOUT_MS);
+      const onOuterAbort = () => attemptCtl.abort();
+      signal?.addEventListener?.('abort', onOuterAbort);
+
       const config = {
         systemInstruction: instruction,
         temperature: 0.35,
         maxOutputTokens: isVoiceMode ? 300 : 8192,
+        abortSignal: attemptCtl.signal,
       };
-      // Voice replies must start instantly: skip internal "thinking" for the fast voice model
-      if (isVoiceMode && !voiceThinkingRejected) config.thinkingConfig = { thinkingBudget: 0 };
+      const tc = thinkingConfigFor();
+      if (tc) config.thinkingConfig = tc;
 
       if (triedWithGrounding) {
         config.tools = [{ googleSearch: {} }];
       }
 
-      const responseStream = await ai.models.generateContentStream({
-        model: modelToTry,
-        contents,
-        config,
-      });
+      let responseStream;
+      try {
+        responseStream = await ai.models.generateContentStream({
+          model: modelToTry,
+          contents,
+          config,
+        });
+      } catch (e) {
+        clearTimeout(firstChunkTimer);
+        signal?.removeEventListener?.('abort', onOuterAbort);
+        throw e;
+      }
 
       const extractedSources = [];
       const seenUrls = new Set();
 
+      try {
       for await (const chunk of responseStream) {
+        if (!firstChunkSeen) { firstChunkSeen = true; clearTimeout(firstChunkTimer); }
         if (signal?.aborted) break;
 
         const groundingChunks = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -493,6 +521,10 @@ export async function streamGemini({
           onChunk(text);
         }
       }
+      } finally {
+        clearTimeout(firstChunkTimer);
+        signal?.removeEventListener?.('abort', onOuterAbort);
+      }
 
       if (extractedSources.length > 0 && typeof onSources === 'function') {
         onSources(extractedSources);
@@ -503,10 +535,11 @@ export async function streamGemini({
       if (signal?.aborted) return;
       const msg = error.message || '';
 
-      // If the model rejects the thinking setting, remember it and retry the SAME model without it
-      if (isVoiceMode && !voiceThinkingRejected && /thinking/i.test(msg)) {
-        voiceThinkingRejected = true;
-        console.warn(`[Nova] ${modelToTry} rejected thinkingConfig; retrying without it.`);
+      // If the API rejects the thinking setting (400 INVALID_ARGUMENT), step down to the next
+      // supported form and retry the SAME model immediately
+      if (thinkingMode < 2 && (/thinking/i.test(msg) || /INVALID_ARGUMENT|"code":\s*400|\b400\b/.test(msg))) {
+        thinkingMode++;
+        console.warn(`[Nova] ${modelToTry} rejected thinking setting; switching to mode ${thinkingMode}.`);
         modelIdx--;
         continue;
       }

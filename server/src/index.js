@@ -318,6 +318,8 @@ function isGeminiKeyConfigured() {
 // Health & Provider Information
 // ========================================================
 
+app.get('/api/ping', (req, res) => res.json({ ok: true }));
+
 app.get('/api/health', async (req, res) => {
   reloadEnv();
   const provider = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
@@ -1551,4 +1553,12 @@ app.listen(PORT, () => {
     console.log(`⚠️  [Gemini] API Key: MISSING or default placeholder!`);
   }
   console.log(`==================================================\n`);
+
+  // Keep the free Render instance awake: ping our own public URL every 10 minutes
+  const selfUrl = process.env.RENDER_EXTERNAL_URL;
+  if (selfUrl) {
+    setInterval(() => {
+      fetch(`${selfUrl}/api/ping`, { signal: AbortSignal.timeout(15000) }).catch(() => {});
+    }, 10 * 60 * 1000).unref?.();
+  }
 });
