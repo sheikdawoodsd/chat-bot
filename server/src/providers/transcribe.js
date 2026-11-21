@@ -50,10 +50,11 @@ export async function transcribeAudio({ buffer, mimeType, lang }) {
   const ai = new GoogleGenAI({ apiKey });
 
   // Multimodal audio models to attempt in order of native audio comprehension
-  // Full flash first: the lite models mishear Tamil as English gibberish
+  // gemini-3.1-flash-lite hears Tamil correctly in a few seconds; gemini-3.5-flash-lite mishears it
+  // and gemini-3.5-flash hangs for audio, so they are only fallbacks.
   const models = [
-    process.env.GEMINI_MODEL || 'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
+    process.env.GEMINI_MODEL || 'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
   ];
 
@@ -92,7 +93,7 @@ export async function transcribeAudio({ buffer, mimeType, lang }) {
       let response;
       for (let attempt = 0; attempt < 3; attempt++) {
         const ctl = new AbortController();
-        const timer = setTimeout(() => ctl.abort(), 15000);
+        const timer = setTimeout(() => ctl.abort(), 9000);
         request.config = { ...mkConfig(), abortSignal: ctl.signal };
         try {
           response = await ai.models.generateContent(request);

@@ -75,6 +75,67 @@ export function cleanSpokenText(rawText) {
 /**
  * Generate real spoken audio using Gemini TTS model
  */
+
+// ---- Free fallback voice (used when the Gemini TTS free quota is exhausted) ----
+let geminiTtsBlockedUntil = 0;
+
+function pickFallbackLang(text, lang) {
+  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
+  if (/[\u0900-\u097F]/.test(text)) return 'hi';
+  if (lang && lang !== 'auto') return String(lang).split('-')[0];
+  return 'en';
+}
+
+function splitForFallback(text, max = 180) {
+  const parts = [];
+  const sentences = text.match(/[^.!?।\n]+[.!?।]?/g) || [text];
+  let cur = '';
+  for (const raw of sentences) {
+    const sn = raw.trim();
+    if (!sn) continue;
+    if ((cur + ' ' + sn).trim().length <= max) cur = (cur + ' ' + sn).trim();
+    else {
+      if (cur) parts.push(cur);
+      if (sn.length <= max) cur = sn;
+      else {
+        const words = sn.split(/\s+/);
+        cur = '';
+        for (const w of words) {
+          if ((cur + ' ' + w).trim().length <= max) cur = (cur + ' ' + w).trim();
+          else { if (cur) parts.push(cur); cur = w; }
+        }
+      }
+    }
+  }
+  if (cur) parts.push(cur);
+  return parts;
+}
+
+async function fallbackTTS(text, lang) {
+  const tl = pickFallbackLang(text, lang);
+  const chunks = splitForFallback(text);
+  const buffers = await Promise.all(
+    chunks.map(async (q) => {
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${tl}&q=${encodeURIComponent(q)}`;
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!r.ok) throw new Error(`fallback TTS ${r.status}`);
+      return Buffer.from(await r.arrayBuffer());
+    })
+  );
+  const mp3 = Buffer.concat(buffers);
+  if (mp3.length < 200) throw new Error('fallback TTS empty');
+  return {
+    audioUrl: `data:audio/mpeg;base64,${mp3.toString('base64')}`,
+    mimeType: 'audio/mpeg',
+    model: 'fallback-tts',
+    voice: tl,
+    text,
+  };
+}
+
 export async function generateTTS({ text, voice = 'Kore', model, lang = 'auto' }) {
   reloadEnv();
   const apiKey = (process.env.GEMINI_API_KEY || '').trim();
@@ -124,6 +185,10 @@ export async function generateTTS({ text, voice = 'Kore', model, lang = 'auto' }
       'gemini-2.5-pro-preview-tts',
     ])
   );
+
+  if (Date.now() < geminiTtsBlockedUntil) {
+    return await fallbackTTS(cleanText, lang);
+  }
 
   const ai = new GoogleGenAI({ apiKey });
   let lastError = null;
@@ -182,10 +247,19 @@ export async function generateTTS({ text, voice = 'Kore', model, lang = 'auto' }
       }
     } catch (err) {
       lastError = err;
+      if (/RESOURCE_EXHAUSTED|\b429\b/.test(err.message || '')) {
+        geminiTtsBlockedUntil = Date.now() + 30 * 60 * 1000; // quota gone: skip Gemini TTS for 30 min
+        break;
+      }
       console.warn(`[Nova TTS] Model ${modelToTry} attempt failed: ${err.message}. Trying next...`);
     }
   }
 
+  try {
+    return await fallbackTTS(cleanText, lang);
+  } catch (e2) {
+    console.warn('[Nova TTS] fallback voice failed:', e2.message);
+  }
   throw new Error(`TTS generation failed: ${lastError?.message || 'No audio returned'}`);
 }
 
