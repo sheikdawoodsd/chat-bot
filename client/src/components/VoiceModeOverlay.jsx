@@ -96,6 +96,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
   const recorderRef = useRef(null);
   const recognitionRef = useRef(null);
   const chunksRef = useRef([]);
+  const leftRef = useRef(false); // user left the page/tab: stay silent until they tap again
   const silenceTimerRef = useRef(null);
   const hasSpokenRef = useRef(false);
   const isMutedRef = useRef(false);
@@ -344,7 +345,7 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
 
   // Start listening session (Fast on-device SpeechRecognition + Fallback)
   const startListeningLoop = useCallback(async () => {
-    if (isMutedRef.current || !isOpenRef.current) {
+    if (isMutedRef.current || !isOpenRef.current || leftRef.current) {
       dispatch({ type: 'SET_STATUS', status: 'idle' });
       return;
     }
@@ -624,6 +625,8 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
 
   useEffect(() => {
     if (isOpen) {
+      leftRef.current = false;
+      audioPlayer.unblock();
       dispatch({ type: 'RESET' });
       startListeningLoopRef.current?.();
     } else {
@@ -637,10 +640,12 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
 
   // Tab visibility: STOP everything when tab is hidden, do NOT auto-restart when visible
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = (forceLeave) => {
       if (!isOpenRef.current) return;
 
-      if (document.hidden) {
+      if (forceLeave === true || document.hidden) {
+        leftRef.current = true;
+        audioPlayer.block();
         // ── Tab is now HIDDEN ──────────────────────────────────────────────
         // Stop all mic listening, audio output, and processing immediately.
         // audioPlayer.stop() cancels TTS fetch, aborts controller, pauses audio.
@@ -700,22 +705,33 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
 
     const handlePageHide = () => {
       // Additional safety: browser fired pagehide (navigate away / close tab)
-      audioPlayer.stop();
+      leftRef.current = true;
+      audioPlayer.block();
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         try { window.speechSynthesis.cancel(); } catch {}
       }
     };
 
+    // Switching to another window (page still "visible") must silence the assistant too
+    const handleBlur = () => {
+      if (!isOpenRef.current) return;
+      handleVisibilityChange(true);
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('blur', handleBlur);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('blur', handleBlur);
     };
   }, []);
 
   // Tap mic action
   const handleOrbTap = () => {
+    leftRef.current = false;
+    audioPlayer.unblock();
     if (status === 'speaking') {
       audioPlayer.stop();
       startListeningLoop();
@@ -1094,6 +1110,8 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
+                leftRef.current = false;
+                audioPlayer.unblock();
                 audioPlayer.stop();
                 dispatch({ type: 'SET_STATUS', status: 'listening' });
                 startListeningLoop();

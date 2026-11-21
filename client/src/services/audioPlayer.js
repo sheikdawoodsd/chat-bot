@@ -10,6 +10,7 @@ class AudioPlayerService {
     this.audioContext = null;
     this.audioElement = null;
     this.isUnlocked = false;
+    this.blocked = false; // true while the user has left the page: nothing may play
     this.volume = 1.0;
     this.speechRate = 1.0;
     this.selectedVoice = 'Kore';
@@ -125,6 +126,15 @@ class AudioPlayerService {
     } catch {}
   }
 
+  block() {
+    this.blocked = true;
+    this.stop();
+  }
+
+  unblock() {
+    this.blocked = false;
+  }
+
   stop() {
     this.isPlaying = false;
     this.sentenceQueue = [];
@@ -210,6 +220,7 @@ class AudioPlayerService {
    */
   async speakText(fullText, { onSentence, onFallback, onDone } = {}) {
     this.stop();
+    if (this.blocked) { onDone?.(); return; }
     this.unlockAudio();
 
     const sentences = this.splitSentences(fullText);
@@ -334,6 +345,7 @@ class AudioPlayerService {
 
   playAudioUrl(url, signal) {
     return new Promise((resolve) => {
+      if (this.blocked) { resolve(); return; }
       if (!this.audioElement) {
         this.audioElement = new Audio();
       }
@@ -391,6 +403,7 @@ class AudioPlayerService {
    */
   speakWithBrowser(sentences, { onSentence, onDone } = {}) {
     return new Promise((resolve) => {
+      if (this.blocked) { resolve(); return; }
       if (typeof window === 'undefined' || !window.speechSynthesis) {
         this.isPlaying = false;
         this.onStatusChange?.('idle');
@@ -523,7 +536,7 @@ class AudioPlayerService {
   }
 
   enqueueStreamingSentence(rawSentence) {
-    if (!this.isPlaying || !rawSentence) return;
+    if (this.blocked || !this.isPlaying || !rawSentence) return;
     const clean = this.cleanText(rawSentence);
     if (!clean) return;
 
