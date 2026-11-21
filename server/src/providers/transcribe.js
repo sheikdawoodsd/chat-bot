@@ -13,7 +13,7 @@ function reloadEnv() {
 }
 
 const TRANSCRIPTION_PROMPT =
-  'Transcribe this audio verbatim into plain text. Automatically recognize the spoken language (including Tamil, Hindi, English, Tanglish, Hinglish, or mixed multilingual speech). Accurately transcribe Tamil words in Tamil script (தமிழ்), Hindi words in Devanagari script (हिन्दी), and English in English script. Do not translate. Output ONLY the exact words spoken without introductory remarks, formatting, timestamps, quotes, or conversational commentary.';
+  'You are a speech-to-text engine for an Indian user in Tamil Nadu. Transcribe this audio verbatim. The speaker is usually speaking Tamil (தமிழ்), Hindi (हिन्दी) or English, sometimes mixed (Tanglish/Hinglish). Listen carefully for Tamil: if the speech is Tamil, write it in Tamil script exactly as spoken; if Hindi, write in Devanagari; if English, write in English. NEVER write Tamil or Hindi speech as phonetic English letters or invent unrelated English words for sounds you do not recognise. Do not translate. Output ONLY the spoken words, with no remarks, quotes, labels or timestamps. If there is no clear speech, output <noise>.';
 
 /**
  * Transcribe recorded microphone audio using Gemini's native multimodal audio capabilities
@@ -50,10 +50,11 @@ export async function transcribeAudio({ buffer, mimeType, lang }) {
   const ai = new GoogleGenAI({ apiKey });
 
   // Multimodal audio models to attempt in order of native audio comprehension
+  // Full flash first: the lite models mishear Tamil as English gibberish
   const models = [
-    'gemini-3.5-flash-lite',
     process.env.GEMINI_MODEL || 'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
+    'gemini-3.5-flash-lite',
   ];
 
   let lastError = null;
