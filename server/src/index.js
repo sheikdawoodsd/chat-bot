@@ -1019,7 +1019,8 @@ app.post('/api/transcribe', requireAuth, handleAudioUpload, async (req, res) => 
     });
   } catch (err) {
     console.error('[Nova Transcribe] Transcription error:', err.message);
-    res.status(500).json({
+    res.status(err.retry ? 422 : 500).json({
+      retry: !!err.retry,
       error: err.message || 'Failed to transcribe audio. Please try speaking again.',
     });
   }

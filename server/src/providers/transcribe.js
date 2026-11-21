@@ -119,6 +119,12 @@ export async function transcribeAudio({ buffer, mimeType, lang }) {
     } catch (err) {
       console.warn(`[Nova Transcribe] Model ${model} failed:`, err.message);
       lastError = err;
+      // A corrupted/empty clip fails on every model: stop retrying and let the client re-listen
+      if (/empty, corrupted, or malformed/i.test(err.message || '')) {
+        const e = new Error('Audio clip unreadable');
+        e.retry = true;
+        throw e;
+      }
     }
   }
 

@@ -495,14 +495,15 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
         const recorder = new MediaRecorder(streamRef.current, mime ? { mimeType: mime } : undefined);
         recorderRef.current = recorder;
         let shouldSend = false;
+        // Each recording keeps its own chunks so two recordings can never mix into a corrupt file
+        const myChunks = [];
 
         recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+          if (e.data && e.data.size > 0) myChunks.push(e.data);
         };
 
         recorder.onstop = async () => {
-          const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mime || 'audio/webm' });
-          chunksRef.current = [];
+          const blob = new Blob(myChunks, { type: recorder.mimeType || mime || 'audio/webm' });
           if (!isOpenRef.current || recorderRef.current !== recorder) return;
           if (!shouldSend || blob.size < 1500) {
             startListeningLoop();
@@ -519,6 +520,10 @@ export function VoiceModeOverlay({ isOpen, onClose, onSendVoiceMessage }) {
             if (!isOpenRef.current) return;
             if (data.text && data.text.trim()) {
               handleTurnSubmit(data.text.trim());
+            } else if (!res.ok && data.retry) {
+              // Unreadable clip: just listen again instead of showing an error
+              isSubmittingTurnRef.current = false;
+              startListeningLoop();
             } else if (!res.ok) {
               isSubmittingTurnRef.current = false;
               dispatch({
